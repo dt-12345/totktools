@@ -61,7 +61,7 @@ class ReadStream(Stream):
     
     def read_ptr(self, align=8, end="<") -> int:
         while self.stream.tell() % align != 0:
-            self.read_u8()
+            self.read(1)
         return struct.unpack(f"{end}Q", self.read(8))[0]
     
     def read_f32(self, end="<") -> float:
@@ -86,18 +86,6 @@ class ReadStream(Stream):
         string = data[offset:end].decode('utf-8')
         self.stream.seek(pos)
         return string
-    
-class PlaceholderWriter:
-    __slots__ = ["_offset"]
-
-    def __init__(self, offset):
-        self._offset = offset
-
-    def write(self, stream, data):
-        pos = stream.tell()
-        stream.seek(self._offset)
-        stream.write(data)
-        stream.seek(pos)
 
 class WriteStream(Stream):
     def __init__(self, stream):
@@ -126,42 +114,60 @@ class WriteStream(Stream):
             self._strings_exb += encoded
             if encoded[-1:] != b'\x00': # All strings must end with a null termination character
                 self._strings_exb += b'\x00'
+    
+    def align_up(self, alignment):
+        while self.stream.tell() % alignment != 0:
+            self.stream.read(1)
 
     def write(self, data):
         self.stream.write(data)
 
 def u8(value):
-    return struct.pack("B", value)
+    return struct.pack("<B", value)
 
-def u16(value):
-    return struct.pack("<H", value)
+def s8(value):
+    return struct.pack("<b", value)
 
-def s16(value):
-    return struct.pack("<h", value)
+def u16(value, end="<"):
+    return struct.pack(f"{end}H", value)
 
-def u32(value):
-    return struct.pack("<I", value)
+def s16(value, end="<"):
+    return struct.pack(f"{end}h", value)
 
-def s32(value):
-    return struct.pack("<i", value)
+def u24(value, end="<"):
+    ret = struct.pack(f"{end}I", value)
+    return ret[1:] if end == ">" else ret[:-1]
 
-def u64(value):
-    return struct.pack("<Q", value)
+def s24(value, end="<"):
+    ret = struct.pack(f"{end}i", value)
+    return ret[1:] if end == ">" else ret[:-1]
 
-def f32(value):
-    return struct.pack("<f", value)
+def u32(value, end="<"):
+    return struct.pack(f"{end}I", value)
+
+def s32(value, end="<"):
+    return struct.pack(f"{end}i", value)
+
+def u64(value, end="<"):
+    return struct.pack(f"{end}Q", value)
+
+def s64(value, end="<"):
+    return struct.pack(f"{end}q", value)
+
+def f32(value, end="<"):
+    return struct.pack(f"{end}f", value)
+
+def f64(value, end="<"):
+    return struct.pack(f"{end}d", value)
 
 def string(value):
-    return value.encode()
+    return value.encode('utf-8')
 
-def vec3f(values):
-    buffer = b''
+def vec3f(values, end="<"):
+    ret = b''
     for value in values:
-        buffer += f32(value)
-    return buffer
+        ret += f32(value, end)
+    return ret
 
-def byte_custom(value, size):
-    return struct.pack(f"<{size}s", value)
-
-def padding():
-    return struct.pack("x")
+def padding(count):
+    return struct.pack(f"{count}s", b'\x00')
