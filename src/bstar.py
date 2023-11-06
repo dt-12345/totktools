@@ -115,3 +115,7 @@ class Bstar:
             if type(old_string) != str:
                 old_string = str(old_string)
             self.entries.remove(old_string)
+
+    # Removes all strings from file
+    def ClearFile(self):
+        self.entries = []

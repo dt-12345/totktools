@@ -117,7 +117,7 @@ class WriteStream(Stream):
     
     def align_up(self, alignment):
         while self.stream.tell() % alignment != 0:
-            self.stream.read(1)
+            self.stream.seek(1, 1)
 
     def write(self, data):
         self.stream.write(data)
