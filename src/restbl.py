@@ -247,8 +247,11 @@ class Restbl:
                 print(f"{change} was added as it was not an entry in the provided RESTBL")
                 self.hash_table[binascii.crc32(change.encode('utf-8'))] = changelog["Changes"][change]
         for addition in changelog["Additions"]:
-            hash = binascii.crc32(addition.encode('utf-8'))
-            if hash not in self.hash_table:
+            if type(addition) == str:
+                hash = binascii.crc32(addition.encode('utf-8'))
+            else:
+                hash = addition
+            if hash not in self.hash_table or type(addition) == int:
                 self.hash_table[hash] = changelog["Additions"][addition]
             else:
                 self.collision_table[addition] = changelog["Additions"][addition]
