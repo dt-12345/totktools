@@ -247,11 +247,14 @@ class Restbl:
                 self.collision_table[change] = changelog["Changes"][change]
             elif change in self.hash_table:
                 self.hash_table[change] = changelog["Changes"][change]
-            elif binascii.crc32(change.encode('utf-8')) in self.hash_table:
-                self.hash_table[binascii.crc32(change.encode('utf-8'))] = changelog["Changes"][change]
+            elif type(change) == str:
+                if binascii.crc32(change.encode('utf-8')) in self.hash_table:
+                    self.hash_table[binascii.crc32(change.encode('utf-8'))] = changelog["Changes"][change]
+                else:
+                    print(f"{change} was added as it was not an entry in the provided RESTBL")
+                    self.hash_table[binascii.crc32(change.encode('utf-8'))] = changelog["Changes"][change]
             else:
-                print(f"{change} was added as it was not an entry in the provided RESTBL")
-                self.hash_table[binascii.crc32(change.encode('utf-8'))] = changelog["Changes"][change]
+                self.hash_table[change] = changelog["Changes"][change]
         for addition in changelog["Additions"]:
             if type(addition) == str:
                 hash = binascii.crc32(addition.encode('utf-8'))
