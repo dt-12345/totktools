@@ -1,7 +1,10 @@
 from utils import *
 import os
+import io
 
 class Sarc:
+    # Takes a SARC file, directory, or raw bytes as input
+    # If using raw bytes, please provide a filename
     def __init__(self, data, filename=''):
         if type(data) != bytes:
             self.filename = os.path.basename(data)
@@ -97,10 +100,13 @@ class Sarc:
             file["Data"] = self.data[node["Data Start"]:node["Data End"]]
             self.stream.seek(pos)
             self.files.append(file)
+        
+        self.stream.seek(0, io.SEEK_END)
+        self.size = self.stream.tell()
 
+    # Converts SARC into directory
     def ExtractArchive(self, dirname=''):
-        if dirname == '':
-            dirname = os.path.splitext(self.filename)[0]
+        dirname = os.path.join(dirname, os.path.splitext(self.filename)[0])
         if not(os.path.exists(dirname)):
             os.makedirs(dirname)
         for file in self.files:
@@ -109,6 +115,7 @@ class Sarc:
             with open(os.path.join(dirname, file["Name"]), 'wb') as outfile:
                 outfile.write(file["Data"])
 
+    # Filename hash algorithm
     def Hash(self, filename):
         hash = 0
         if type(filename) != bytes:
@@ -119,6 +126,7 @@ class Sarc:
             hash = hash * self.hash_mult + byte
         return hash & 0xFFFFFFFF
     
+    # Creates SARC file
     def CreateArchive(self, filename='', output_dir='', endianness="little"):
         if endianness.lower() == "little":
             bom = "<"
@@ -128,7 +136,8 @@ class Sarc:
             filename = self.filename
         with open(os.path.join(output_dir, filename), 'wb+') as outfile:
             buffer = WriteStream(outfile)
-        
+
+            self.files = sorted(self.files, key=lambda d: self.Hash(d["Name"]))
             name_count = {i["Name"]: 1 for i in self.files}
             name_offsets = {}
             buffer.seek(self.header_size + self.sfat_header_size + 0x10 * len(self.files))
@@ -172,11 +181,13 @@ class Sarc:
                 buffer.write(u32(data_offsets[self.files.index(file)][0]))
                 buffer.write(u32(data_offsets[self.files.index(file)][1]))
     
+    # Removes specified file
     def RemoveFile(self, filepath):
         for file in self.files:
             if file["Name"] == filepath:
                 self.files.remove(file)
     
+    # Adds specified file/folder
     def AddFile(self, filepath):
         if os.path.isdir(filepath):
             for root_dir, dir, files in os.walk(filepath):
@@ -190,20 +201,34 @@ class Sarc:
             with open(filepath, 'rb') as file:
                 self.files.append({"Name" : filepath, "Data" : file.read()})
     
+    # Replaces specified file with new file
     def ReplaceFile(self, old_file, new_file):
         dir_path = os.path.dirname(old_file)
         self.RemoveFile(old_file)
         self.AddFile(os.path.join(dir_path, new_file))
 
+    # Returns a list of all files in archive
     def ListFiles(self):
         files = []
         for file in self.files:
             files.append(file["Name"])
         return files
+
+    def ListFileInfo(self):
+        files = {}
+        for file in self.files:
+            files[file["Name"]] = len(file["Data"])
+        return files
     
+    # Removes all files in archive
     def ClearArchive(self):
         self.files = []
 
+    # Renames specified file
+    def RenameFile(self, old_filename, new_filename):
+        self.files[new_filename] = self.files.pop(old_filename)
+
+    # Returns a string list of all files in archive
     def __repr__(self):
         files = [file["Name"] for file in self.files]
         output = ''

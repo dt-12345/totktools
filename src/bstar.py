@@ -1,14 +1,20 @@
 from utils import *
 import os
 import json
-import yaml
+try:
+    import yaml
+except ImportError:
+    raise ImportError("Would you be so kind as to LEARN TO FUCKING READ INSTRUCTIONS")
 
 class Bstar:
     # Takes in a filepath or raw bytes as input
     # If passing in raw bytes, please also provide a filename
     def __init__(self, data, filename=''):
         if type(data) != bytes:
-            self.filename = os.path.basename(data).replace('.json', '').replace('.yml', '').replace('.yaml', '').replace('.txt', '')
+            if os.path.splitext(data)[1] in ['.json', '.yml', '.yaml', '.txt']:
+                self.filename = os.path.basename(os.path.splitext(data)[0])
+            else:
+                self.filename = os.path.basename(data)
             if os.path.splitext(data)[1] == '.bstar':
                 with open(data, 'rb') as file:
                     data = file.read()

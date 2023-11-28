@@ -1,0 +1,495 @@
+from utils import *
+import zstd
+try:
+    import zstandard as zs
+    import yaml
+except ImportError:
+    raise ImportError("Would you be so kind as to LEARN TO FUCKING READ INSTRUCTIONS")
+import sarc
+import os
+import binascii
+import json
+import sys
+
+def get_correct_path(relative_path):
+    try:
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+
+    return os.path.join(base_path, relative_path)
+
+class Restbl:
+    def __init__(self, filepath):
+        if os.path.splitext(filepath)[1] in ['.zs', '.zstd']:
+            decompressor = zs.ZstdDecompressor()
+            with open(filepath, 'rb') as f:
+                compressed = f.read()
+                data = decompressor.decompress(compressed)
+                filepath = os.path.splitext(filepath)[0]
+        else:
+            with open(filepath, 'rb') as f:
+                data = f.read()
+        
+        self.stream = ReadStream(data)
+        self.filename = os.path.basename(filepath)
+        self.game_version = os.path.splitext(os.path.splitext(filepath)[0])[1][1:]
+        self.hashmap = {}
+
+        self.magic = self.stream.read(6).decode('utf-8')
+        assert self.magic == "RESTBL", f"Invalid file magic, expected 'RESTBL' but got '{self.magic}'"
+        self.version = self.stream.read_u32()
+        assert self.version == 1, f"Invalid version, expected v1 but got v{self.version}"
+        self.string_size = self.stream.read_u32()
+        self.hash_count = self.stream.read_u32()
+        self.collision_count = self.stream.read_u32()
+
+        self.hash_table = {}
+        self.collision_table = {}
+
+        for i in range(self.hash_count):
+            self.ReadHashEntry()
+        
+        for i in range(self.collision_count):
+            self.ReadCollisionEntry()
+    
+    def ReadHashEntry(self):
+        hash = self.stream.read_u32()
+        self.hash_table[hash] = self.stream.read_u32()
+        return
+    
+    def ReadCollisionEntry(self):
+        filepath = self.stream.read_string()
+        if len(filepath) > self.string_size:
+            raise ValueError("Collision table filepath string was too large")
+        self.stream.read(self.string_size - len(filepath) - 1)
+        self.collision_table[filepath] = self.stream.read_u32()
+        return
+
+    def Reserialize(self, output_dir=''):
+        if os.path.exists(output_dir):
+            os.makedirs(output_dir)
+        with open(os.path.join(output_dir, self.filename), 'wb') as outfile:
+            self.buffer = WriteStream(outfile)
+            self.buffer.write("RESTBL".encode('utf-8'))
+            self.buffer.write(u32(self.version))
+            self.buffer.write(u32(self.string_size))
+            self.buffer.write(u32(len(self.hash_table)))
+            self.buffer.write(u32(len(self.collision_table)))
+            self.hash_table = dict(sorted(self.hash_table.items()))
+            self.collision_table = dict(sorted(self.collision_table.items()))
+            for hash in self.hash_table:
+                self.buffer.write(u32(hash))
+                self.buffer.write(u32(self.hash_table[hash]))
+            for name in self.collision_table:
+                string = name.encode('utf-8')
+                while len(string) != self.string_size:
+                    string += b'\x00'
+                self.buffer.write(string)
+                self.buffer.write(u32(self.collision_table[name]))
+
+    def AddEntry(self, path, size):
+        hash = binascii.crc32(path.encode('utf-8'))
+        if hash not in self.hash_table:
+            self.hash_table[hash] = size
+        else:
+            self.collision_table[path] = size
+    
+    def DeleteEntry(self, path):
+        hash = binascii.crc32(path.encode('utf-8'))
+        if path in self.collision_table:
+            del self.collision_table[path]
+        elif hash in self.hash_table:
+            del self.hash_table[hash]
+        else:
+            raise ValueError("Entry not found")
+        
+    def AddByHash(self, hash, size):
+        self.hash_table[hash] = size
+    
+    def DeleteByHash(self, hash):
+        try:
+            del self.hash_table[hash]
+        except KeyError:
+            raise KeyError("Entry not found")
+    
+    def _GenerateHashmap(self, paths=[]):
+        if paths == []:
+            version = os.path.splitext(os.path.splitext(os.path.basename(self.filename))[0])[1]
+            string_list = "string_lists/" + version.replace('.', '') + ".txt"
+            string_list = get_correct_path(string_list)
+            paths = []
+            with open(string_list, 'r') as strings:
+                for line in strings:
+                    paths.append(line[:-1])
+        for path in paths:
+            if path not in self.collision_table:
+                self.hashmap[binascii.crc32(path.encode('utf-8'))] = path
+        return self.hashmap
+
+    def _DictCompareChanges(self, edited, original):
+        return {k: edited[k] for k in edited if k in original and edited[k] != original[k]}
+    
+    def _DictCompareDeletions(self, edited, original):
+        return {k: original[k] for k in original if k not in edited}
+    
+    def _DictCompareAdditions(self, edited, original):
+        return {k: edited[k] for k in edited if k not in original}
+
+    def _GetCombinedChanges(self, original, function):
+        changes_hash = function(self.hash_table, original["Hash Table"])
+        changes_collision = function(self.collision_table, original["Collision Table"])
+        changes = {}
+        for hash in changes_hash:
+            string = self._TryGetPath(hash, self.hashmap)
+            changes[string] = changes_hash[hash]
+        changes = changes | changes_collision
+        return changes
+
+    def _TryGetPath(self, hash, hashmap):
+        if hash in hashmap:
+            return hashmap[hash]
+        else:
+            return hash
+
+    def GenerateChangelog(self):
+        version = os.path.splitext(os.path.splitext(os.path.basename(self.filename))[0])[1]
+        original_filepath = "restbl/ResourceSizeTable.Product" + version + ".rsizetable.json"
+        original_filepath = get_correct_path(original_filepath)
+        with open(original_filepath, 'r') as file:
+            original = json.load(file, object_pairs_hook=lambda d: {int(k) if k.isdigit() else k: v for k, v in d})
+        changes = self._GetCombinedChanges(original, self._DictCompareChanges)
+        additions = self._GetCombinedChanges(original, self._DictCompareAdditions)
+        deletions = self._GetCombinedChanges(original, self._DictCompareDeletions)
+        changelog = {"Changes" : changes, "Additions" : additions, "Deletions" : deletions}
+        return changelog
+        
+    def GenerateRcl(self, filename=''):
+        changelog = self.GenerateChangelog()
+        if filename == "":
+            filename = "changes.rcl"
+        with open(filename, 'w') as rcl:
+            for change in changelog["Changes"]:
+                rcl.write('* ' + str(change) + ' = ' + str(changelog["Changes"][change]) + '\n')
+            for change in changelog["Additions"]:
+                rcl.write('+ ' + str(change) + ' = ' + str(changelog["Additions"][change]) + '\n')
+            for change in changelog["Deletions"]:
+                rcl.write('- ' + str(change) + '\n')
+
+    def GenerateChangelogFromRcl(self, rcl_path):
+        changelog = {"Changes" : {}, "Additions" : {}, "Deletions" : {}}
+        with open(rcl_path, 'r') as rcl:
+            for line in rcl:
+                entry = line.split(" = ")
+                match line[0]:
+                    case "*":
+                        changelog["Changes"][entry[0].lstrip("*+- ").rstrip("= ")] = int(entry[1])
+                    case "+":
+                        changelog["Additions"][entry[0].lstrip("*+- ").rstrip("= ")] = int(entry[1])
+                    case "-":
+                        changelog["Deleetions"][entry[0].lstrip("*+- ").rstrip("= ")] = 0
+        return changelog
+
+    def GenerateYamlPatch(self, filename=''):
+        changelog = self.GenerateChangelog()
+        if filename == "":
+            filename = "changes.yml"
+        patch = {}
+        for change in changelog["Changes"]:
+            patch[change] = changelog["Changes"][change]
+        for addition in changelog["Additions"]:
+            patch[addition] = changelog["Additions"][addition]
+        for deletion in changelog["Deletions"]:
+            patch[deletion] = 0
+        with open(filename, 'w') as yaml_patch:
+            yaml.dump(patch, yaml_patch, allow_unicode=True, encoding='utf-8', sort_keys=True)
+    
+    def GenerateChangelogFromYaml(self, yaml_path, version):
+        changelog = {"Changes" : {}, "Additions" : {}, "Deletions" : {}}
+        with open(yaml_path, 'r') as yml:
+            patch = yaml.safe_load(yml)
+        original_filepath = "restbl/ResourceSizeTable.Product." + str(version).replace('.', '') + ".rsizetable.json"
+        original_filepath = get_correct_path(original_filepath)
+        with open(original_filepath, 'r') as file:
+            original = json.load(file, object_pairs_hook=lambda d: {int(k) if k.isdigit() else k: v for k, v in d})
+        for change in patch:
+            hash = binascii.crc32(change.encode('utf-8'))
+            if hash in original["Hash Table"] or change in original["Collision Table"]:
+                changelog["Changes"][change] = patch[change]
+            else:
+                changelog["Additions"][change] = patch[change]
+        return changelog
+    
+    def ApplyChangelog(self, changelog):
+        for change in changelog["Changes"]:
+            if change in self.collision_table:
+                self.collision_table[change] = changelog["Changes"][change]
+            elif change in self.hash_table:
+                self.hash_table[change] = changelog["Changes"][change]
+            elif binascii.crc32(change.encode('utf-8')) in self.hash_table:
+                self.hash_table[binascii.crc32(change.encode('utf-8'))] = changelog["Changes"][change]
+            else:
+                print(f"{change} was added as it was not an entry in the provided RESTBL")
+                self.hash_table[binascii.crc32(change.encode('utf-8'))] = changelog["Changes"][change]
+        for addition in changelog["Additions"]:
+            hash = binascii.crc32(addition.encode('utf-8'))
+            if hash not in self.hash_table:
+                self.hash_table[hash] = changelog["Additions"][addition]
+            else:
+                self.collision_table[addition] = changelog["Additions"][addition]
+        for deletion in changelog["Deletions"]:
+            if deletion in self.collision_table:
+                del self.collision_table[deletion]
+            elif deletion in self.hash_table:
+                del self.hash_table[deletion]
+            else:
+                del self.hash_table[binascii.crc32(deletion.encode('utf-8'))]
+    
+    def ApplyRcl(self, rcl_path):
+        changelog = self.GenerateChangelogFromRcl(rcl_path)
+        self.ApplyChangelog(changelog)
+    
+    def ApplyYamlPatch(self, yaml_path):
+        changelog = self.GenerateChangelogFromYaml(yaml_path)
+        self.ApplyChangelog(changelog)
+    
+    def MergePatches(self, patches_folder):
+        patches = [file for file in os.listdir(patches_folder) if os.path.splitext(file)[1] in ['.rcl', '.yml', '.yaml']]
+        changelogs = []
+        for patch in patches:
+            if os.path.splitext(patch) in ['.yml', '.yaml']:
+                changelogs.append(self.GenerateChangelogFromYaml(os.path.join(patches_folder, patch)))
+            else:
+                changelogs.append(self.GenerateChangelogFromRcl(os.path.join(patches_folder, patch)))
+        changelog = {"Changes" : {}, "Additions" : {}, "Deletions" : {}}
+        for log in changelogs:
+            for change in log["Changes"]:
+                if change not in changelog["Changes"]:
+                    changelog["Changes"][change] = log["Changes"][change]
+                else:
+                    changelog["Changes"][change] = max(changelog["Changes"][change], log["Changes"][change])
+            for addition in log["Additions"]:
+                if addition not in changelog["Additions"]:
+                    changelog["Additions"][addition] = log["Additions"][addition]
+                else:
+                    changelog["Additions"][addition] = max(changelog["Additions"][addition], log["Additions"][addition])
+            for deletion in log["Deletions"]:
+                if deletion not in changelog["Deletions"]:
+                    changelog["Deletions"][deletion] = log["Deletions"][deletion]
+        return changelog
+
+    def GenerateChangelogFromMod(self, mod_path, dump_path=''):
+        info = GetInfo(mod_path + '/romfs', dump_path)
+        changelog = {"Changes" : {}, "Additions" : {}, "Deletions" : {}}
+        if self.hashmap == {}:
+            self._GenerateHashmap()
+        strings = list(self.hashmap.values())
+        for file in info:
+            if os.path.splitext(file)[1] not in ['.bwav', '.rsizetable'] and os.path.splitext(file)[0] != r"Pack\ZsDic":
+                if file in strings:
+                    changelog["Changes"][file] = info[file]
+                elif file in self.collision_table:
+                    changelog["Changes"][file] = info[file]
+                else:
+                    changelog["Additions"][file] = info[file]
+        changelog = dict(sorted(changelog.items()))
+        return changelog
+    
+    def GenerateChangelogFromModDirectory(self, mod_path, dump_path=''):
+        changelogs = []
+        mods = [mod for mod in os.listdir(mod_path) if os.path.isdir(os.path.join(mod_path, mod))]
+        for mod in mods:
+            changelogs.append(self.GenerateChangelogFromMod(os.path.join(mod_path, mod), dump_path))
+        return MergeChangelogs(changelogs)
+    
+    def LoadDefaults(self):
+        with open(get_correct_path('restbl/ResourceSizeTable.Product.' + self.game_version + '.rsizetable.json'), 'r') as f:
+            data = json.load(f, object_pairs_hook=lambda d: {int(k) if k.isdigit() else k: v for k, v in d})
+        self.hash_table = data["Hash Table"]
+        self.collision_table = data["Collision Table"]
+
+def GetStringList(romfs_path, dump_path=''):
+    paths = []
+    if dump_path == '':
+        dump_path = romfs_path
+    zs = zstd.Zstd(dump_path)
+    for dir,subdir,files in os.walk(romfs_path):
+        for file in files:
+            full_path = os.path.join(dir, file)
+            filepath = full_path
+            if os.path.isfile(filepath):
+                filepath = os.path.join(os.path.relpath(dir, romfs_path), os.path.basename(filepath))
+                if os.path.splitext(filepath)[1] in ['.zs', '.zstd', '.mc']:
+                    filepath = os.path.splitext(filepath)[0]
+                if os.path.splitext(filepath)[1] not in ['.bwav', '.rsizetable'] and os.path.splitext(filepath)[0] != r"Pack\ZsDic":
+                    filepath = filepath.replace('\\', '/')
+                    paths.append(filepath)
+                    print(filepath)
+                    if os.path.splitext(filepath)[1] == '.pack':
+                        archive = sarc.Sarc(zs.Decompress(full_path, no_output=True))
+                        paths += archive.ListFiles()
+    paths = list(set(paths))
+    paths.sort()
+    return paths
+
+def GetFileLists(mod_path, dump_path=''):
+    if dump_path == '':
+        dump_path = mod_path
+    mods = [mod for mod in os.listdir(mod_path) if os.path.isdir(os.path.join(mod_path, mod))]
+    files = {}
+    for mod in mods:
+        files[mod] = GetStringList(os.path.join(mod_path, mod) + "/romfs", dump_path)
+    return files
+
+def GetInfo(romfs_path, dump_path=''):
+    info = {}
+    if dump_path == '':
+        dump_path = romfs_path
+    zs = zstd.Zstd(dump_path)
+    for dir,subdir,files in os.walk(romfs_path):
+        for file in files:
+            full_path = os.path.join(dir, file)
+            filepath = full_path
+            if os.path.isfile(filepath):
+                filepath = os.path.join(os.path.relpath(dir, romfs_path), os.path.basename(filepath))
+                if os.path.splitext(filepath)[1] in ['.zs', '.zstd', '.mc']:
+                    filepath = os.path.splitext(filepath)[0]
+                if os.path.splitext(filepath)[1] not in ['.bwav', '.rsizetable'] and os.path.splitext(filepath)[0] != r"Pack\ZsDic":
+                    filepath = filepath.replace('\\', '/')
+                    info[filepath] = CalcSize(full_path, dump_path)
+                    print(filepath)
+                    if os.path.splitext(filepath)[1] == '.pack':
+                        archive = sarc.Sarc(zs.Decompress(full_path, no_output=True))
+                        archive_info = archive.ListFileInfo()
+                        for f in archive_info:
+                            size = CalcSize(f, dump_path, archive_info[f])
+                            if f not in info:
+                                info[f] = size
+                            else:
+                                info[f] = max(info[f], size)
+    info = dict(sorted(info.items()))
+    return info
+
+def GetInfoList(mod_path, dump_path=''):
+    if dump_path == '':
+        dump_path = mod_path
+    mods = [mod for mod in os.listdir(mod_path) if os.path.isdir(os.path.join(mod_path, mod))]
+    files = {}
+    for mod in mods:
+        files[mod] = GetInfo(os.path.join(mod_path, mod) + "/romfs", dump_path)
+    return files
+
+def CalcSize(file, romfs_path, size=None):
+    if size == None:
+        size = os.path.getsize(file)
+    decompressor = zstd.Zstd(romfs_path)
+    if os.path.splitext(file)[1] in ['.zs', '.zstd']:
+        size = decompressor.GetDecompressedSize(file)
+        file = os.path.splitext(file)[0]
+    elif os.path.splitext(file)[1] in ['.mc']:
+        size = os.path.getsize(file) * 5
+        file = os.path.splitext(file)[0]
+    if os.path.splitext(file)[1] == '.txtg':
+        return size + 5000
+    elif os.path.splitext(file)[1] == '.bgyml':
+        return (size + 1000) * 8
+    else:
+        return (size + 1500) * 4
+    
+def MergeChangelogs(changelogs):
+    changelog = {"Changes" : {}, "Additions" : {}, "Deletions" : {}}
+    for log in changelogs:
+        for change in log["Changes"]:
+            if change not in changelog["Changes"]:
+                changelog["Changes"][change] = log["Changes"][change]
+            else:
+                changelog["Changes"][change] = max(changelog["Changes"][change], log["Changes"][change])
+        for addition in log["Additions"]:
+            if addition not in changelog["Additions"]:
+                changelog["Additions"][addition] = log["Additions"][addition]
+            else:
+                changelog["Additions"][addition] = max(changelog["Additions"][addition], log["Additions"][addition])
+        for deletion in log["Deletions"]:
+            if deletion not in changelog["Deletions"]:
+                changelog["Deletions"][deletion] = log["Deletions"][deletion]
+    changelog = dict(sorted(changelog.items()))
+    return changelog
+
+def MergeMods(mod_path, romfs_path, restbl_path='', version=121, compressed=True):
+    if not(os.path.exists(restbl_path)):
+        print("Creating empty resource size table...")
+        filename = os.path.join(restbl_path, 'ResourceSizeTable.Product.' + str(version).replace('.', '') + '.rsizetable')
+        with open(filename, 'wb') as file:
+            buffer = WriteStream(file)
+            buffer.write("RESTBL".encode('utf-8'))
+            buffer.write(u32(1))
+            buffer.write(u32(0xA0))
+            buffer.write(u32(0))
+            buffer.write(u32(0))
+        restbl = Restbl(filename)
+        restbl.LoadDefaults()
+    else:
+        restbl = Restbl(restbl_path)
+    print("Generating changelogs...")
+    changelog = restbl.GenerateChangelogFromModDirectory(mod_path, romfs_path)
+    with open('test.json', 'w') as f:
+        json.dump(changelog, f, indent=4)
+    print("Applying changes...")
+    restbl.ApplyChangelog(changelog)
+    restbl.Reserialize()
+    if compressed:
+        with open(restbl.filename, 'rb') as file:
+            data = file.read()
+        if os.path.exists(restbl.filename + '.zs'):
+            os.remove(restbl.filename + '.zs')
+        os.rename(restbl.filename, restbl.filename + '.zs')
+        with open(restbl.filename + '.zs', 'wb') as file:
+            compressor = zs.ZstdCompressor()
+            file.write(compressor.compress(data))
+    print("Finished")
+
+import PySimpleGUI as sg
+from tkinter import filedialog as fd
+def open_tool():
+    sg.theme('Black')
+    event, values = sg.Window('RESTBL Merger',
+                              [[sg.Text('Options:'), sg.Checkbox(default=True, text='Compress Output?', size=(20,10), key='compressed')],
+                               [sg.Button('Select Mods'), sg.Button('Select RESTBL'), sg.Button('Exit')]]).read(close=True)
+    if event == 'Select Mods':
+        mod_path, romfs_path, restbl_path, version = get_paths()
+        MergeMods(mod_path, romfs_path, restbl_path, version, compressed=values['compressed'])
+    elif event == 'Select RESTBL':
+        changelog0, changelog1, restbl = get_changelogs()
+        print("Calculating merged changelog")
+        changelog = MergeChangelogs([changelog0, changelog1])
+        print("Applying changes")
+        restbl.ApplyChangelog(changelog)
+        restbl.Reserialize()
+        print("Finished")
+    else:
+        sys.exit()
+
+def get_paths():
+    mod_path = fd.askdirectory(title="Select Directory Containing Mods to Merge")
+    romfs_path = fd.askdirectory(title="Select RomFS Dump")
+    event, value = sg.Window('Options', [[sg.Button('Add Base RESTBL File'), sg.Button('Create Base RESTBL File')]]).read(close=True)
+    if event == 'Add Base RESTBL File':
+        restbl_path = fd.askopenfilename(title="Select RESTBL File", filetypes=[('RESTBL Files', '.rsizetable'),
+                                                                            ('RESTBL Files', '.rsizetable.zs')])
+        version = 121
+    else:
+        restbl_path = ''
+        event, value = sg.Window('Select Version', [[sg.Button('1.0.0'), sg.Button('1.1.0'), sg.Button('1.1.1'),
+                                                     sg.Button('1.1.2'), sg.Button('1.2.0'), sg.Button('1.2.1')]]).read(close=True)
+        version = int(event.replace('.', ''))
+
+    return mod_path, romfs_path, restbl_path, version
+
+def get_changelogs():
+    restbl_path0 = fd.askopenfilename(title="Select RESTBL File 1", filetypes=[('RESTBL Files', '.rsizetable'),
+                                                                           ('RESTBL Files', '.rsizetable.zs')])
+    restbl0 = Restbl(restbl_path0)
+    restbl_path1 = fd.askopenfilename(title="Select RESTBL File 2", filetypes=[('RESTBL Files', '.rsizetable'),
+                                                                           ('RESTBL Files', '.rsizetable.zs')])
+    restbl1 = Restbl(restbl_path1)
+    return restbl0.GenerateChangelog(), restbl1.GenerateChangelog(), restbl0
