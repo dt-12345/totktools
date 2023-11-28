@@ -11,6 +11,7 @@ import binascii
 import json
 import sys
 
+# For pyinstaller relative paths
 def get_correct_path(relative_path):
     try:
         base_path = sys._MEIPASS
@@ -113,6 +114,7 @@ class Restbl:
         except KeyError:
             raise KeyError("Entry not found")
     
+    # Generates mapping of CRC32 hashes to filepaths
     def _GenerateHashmap(self, paths=[]):
         if paths == []:
             version = os.path.splitext(os.path.splitext(os.path.basename(self.filename))[0])[1]
@@ -146,12 +148,14 @@ class Restbl:
         changes = changes | changes_collision
         return changes
 
+    # Attempts to get the filepath from the hash and returns the hash if not found
     def _TryGetPath(self, hash, hashmap):
         if hash in hashmap:
             return hashmap[hash]
         else:
             return hash
 
+    # Changelog comparing to the vanilla file
     def GenerateChangelog(self):
         original_filepath = "restbl/ResourceSizeTable.Product." + self.game_version + ".rsizetable.json"
         original_filepath = get_correct_path(original_filepath)
@@ -162,7 +166,8 @@ class Restbl:
         deletions = self._GetCombinedChanges(original, self._DictCompareDeletions)
         changelog = {"Changes" : changes, "Additions" : additions, "Deletions" : deletions}
         return changelog
-        
+
+    # RCL files for NX-Editor
     def GenerateRcl(self, filename=''):
         changelog = self.GenerateChangelog()
         if self.hashmap == {}:
@@ -236,6 +241,7 @@ class Restbl:
         return changelog
     
     def ApplyChangelog(self, changelog):
+        # Check if in collision table, then check if it's a hash, then check if the hash exists, otherwise add
         for change in changelog["Changes"]:
             if change in self.collision_table:
                 self.collision_table[change] = changelog["Changes"][change]
@@ -251,6 +257,7 @@ class Restbl:
                 hash = binascii.crc32(addition.encode('utf-8'))
             else:
                 hash = addition
+            # No way to resolve hash collisions for new files if only the hash is known
             if hash not in self.hash_table or type(addition) == int:
                 self.hash_table[hash] = changelog["Additions"][addition]
             else:
@@ -261,7 +268,12 @@ class Restbl:
             elif deletion in self.hash_table:
                 del self.hash_table[deletion]
             else:
-                del self.hash_table[binascii.crc32(deletion.encode('utf-8'))]
+                if type(deletion) == str:
+                    if binascii.crc32(deletion.encode('utf-8')) in self.hash_table:
+                        del self.hash_table[binascii.crc32(deletion.encode('utf-8'))]
+                else:
+                    if deletion in self.hash_table:
+                        del self.hash_table[deletion]
     
     def ApplyRcl(self, rcl_path):
         changelog = self.GenerateChangelogFromRcl(rcl_path)
@@ -296,6 +308,7 @@ class Restbl:
                     changelog["Deletions"][deletion] = log["Deletions"][deletion]
         return changelog
 
+    # Changelog from analyzing mod directory
     def GenerateChangelogFromMod(self, mod_path, dump_path=''):
         info = GetInfo(mod_path + '/romfs', dump_path)
         changelog = {"Changes" : {}, "Additions" : {}, "Deletions" : {}}
@@ -313,6 +326,7 @@ class Restbl:
         changelog = dict(sorted(changelog.items()))
         return changelog
     
+    # Same as above but for multiple mods
     def GenerateChangelogFromModDirectory(self, mod_path, dump_path=''):
         changelogs = []
         mods = [mod for mod in os.listdir(mod_path) if os.path.isdir(os.path.join(mod_path, mod))]
@@ -320,12 +334,14 @@ class Restbl:
             changelogs.append(self.GenerateChangelogFromMod(os.path.join(mod_path, mod), dump_path))
         return MergeChangelogs(changelogs)
     
+    # Loads the vanilla RESTBL values into the object
     def LoadDefaults(self):
         with open(get_correct_path('restbl/ResourceSizeTable.Product.' + self.game_version + '.rsizetable.json'), 'r') as f:
             data = json.load(f, object_pairs_hook=lambda d: {int(k) if k.isdigit() else k: v for k, v in d})
         self.hash_table = data["Hash Table"]
         self.collision_table = data["Collision Table"]
 
+# List of all files in a directory
 def GetStringList(romfs_path, dump_path=''):
     paths = []
     if dump_path == '':
@@ -350,6 +366,7 @@ def GetStringList(romfs_path, dump_path=''):
     paths.sort()
     return paths
 
+# List of list of files for each mod in a directory
 def GetFileLists(mod_path, dump_path=''):
     if dump_path == '':
         dump_path = mod_path
@@ -359,6 +376,7 @@ def GetFileLists(mod_path, dump_path=''):
         files[mod] = GetStringList(os.path.join(mod_path, mod) + "/romfs", dump_path)
     return files
 
+# Same as above but stores the estimated entry size as well
 def GetInfo(romfs_path, dump_path=''):
     info = {}
     if dump_path == '':
@@ -388,6 +406,7 @@ def GetInfo(romfs_path, dump_path=''):
     info = dict(sorted(info.items()))
     return info
 
+# Same as above but for multiple mods
 def GetInfoList(mod_path, dump_path=''):
     if dump_path == '':
         dump_path = mod_path
@@ -397,6 +416,7 @@ def GetInfoList(mod_path, dump_path=''):
         files[mod] = GetInfo(os.path.join(mod_path, mod) + "/romfs", dump_path)
     return files
 
+# These are estimates, would be nice to have more precise values
 def CalcSize(file, romfs_path, size=None):
     if size == None:
         size = os.path.getsize(file)
@@ -413,7 +433,8 @@ def CalcSize(file, romfs_path, size=None):
         return (size + 1000) * 8
     else:
         return (size + 1500) * 4
-    
+
+# Merges list of changelogs into one (doesn't accept RCL or YAML)
 def MergeChangelogs(changelogs):
     changelog = {"Changes" : {}, "Additions" : {}, "Deletions" : {}}
     for log in changelogs:
