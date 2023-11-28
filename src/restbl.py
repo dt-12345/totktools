@@ -153,8 +153,7 @@ class Restbl:
             return hash
 
     def GenerateChangelog(self):
-        version = os.path.splitext(os.path.splitext(os.path.basename(self.filename))[0])[1]
-        original_filepath = "restbl/ResourceSizeTable.Product" + version + ".rsizetable.json"
+        original_filepath = "restbl/ResourceSizeTable.Product." + self.game_version + ".rsizetable.json"
         original_filepath = get_correct_path(original_filepath)
         with open(original_filepath, 'r') as file:
             original = json.load(file, object_pairs_hook=lambda d: {int(k) if k.isdigit() else k: v for k, v in d})
@@ -166,15 +165,26 @@ class Restbl:
         
     def GenerateRcl(self, filename=''):
         changelog = self.GenerateChangelog()
+        if self.hashmap == {}:
+            self._GenerateHashmap()
         if filename == "":
             filename = "changes.rcl"
         with open(filename, 'w') as rcl:
             for change in changelog["Changes"]:
-                rcl.write('* ' + str(change) + ' = ' + str(changelog["Changes"][change]) + '\n')
+                string = str(self._TryGetPath(change, self.hashmap))
+                if string.isdigit():
+                    string = '0x' + string
+                rcl.write('* ' + string + ' = ' + str(changelog["Changes"][change]) + '\n')
             for change in changelog["Additions"]:
-                rcl.write('+ ' + str(change) + ' = ' + str(changelog["Additions"][change]) + '\n')
+                string = str(self._TryGetPath(change, self.hashmap))
+                if string.isdigit():
+                    string = '0x' + string
+                rcl.write('+ ' + string + ' = ' + str(changelog["Additions"][change]) + '\n')
             for change in changelog["Deletions"]:
-                rcl.write('- ' + str(change) + '\n')
+                string = str(self._TryGetPath(change, self.hashmap))
+                if string.isdigit():
+                    string = '0x' + string
+                rcl.write('- ' + string + '\n')
 
     def GenerateChangelogFromRcl(self, rcl_path):
         changelog = {"Changes" : {}, "Additions" : {}, "Deletions" : {}}
@@ -187,28 +197,30 @@ class Restbl:
                     case "+":
                         changelog["Additions"][entry[0].lstrip("*+- ").rstrip("= ")] = int(entry[1])
                     case "-":
-                        changelog["Deleetions"][entry[0].lstrip("*+- ").rstrip("= ")] = 0
+                        changelog["Deletions"][entry[0].lstrip("*+- ").rstrip("= ")] = 0
         return changelog
 
     def GenerateYamlPatch(self, filename=''):
         changelog = self.GenerateChangelog()
         if filename == "":
             filename = "changes.yml"
+        if self.hashmap == {}:
+            self._GenerateHashmap()
         patch = {}
         for change in changelog["Changes"]:
-            patch[change] = changelog["Changes"][change]
+            patch[self._TryGetPath(change, self.hashmap)] = changelog["Changes"][change]
         for addition in changelog["Additions"]:
-            patch[addition] = changelog["Additions"][addition]
+            patch[self._TryGetPath(addition, self.hashmap)] = changelog["Additions"][addition]
         for deletion in changelog["Deletions"]:
-            patch[deletion] = 0
+            patch[self._TryGetPath(deletion, self.hashmap)] = 0
         with open(filename, 'w') as yaml_patch:
             yaml.dump(patch, yaml_patch, allow_unicode=True, encoding='utf-8', sort_keys=True)
     
-    def GenerateChangelogFromYaml(self, yaml_path, version):
+    def GenerateChangelogFromYaml(self, yaml_path):
         changelog = {"Changes" : {}, "Additions" : {}, "Deletions" : {}}
         with open(yaml_path, 'r') as yml:
             patch = yaml.safe_load(yml)
-        original_filepath = "restbl/ResourceSizeTable.Product." + str(version).replace('.', '') + ".rsizetable.json"
+        original_filepath = "restbl/ResourceSizeTable.Product." + self.game_version + ".rsizetable.json"
         original_filepath = get_correct_path(original_filepath)
         with open(original_filepath, 'r') as file:
             original = json.load(file, object_pairs_hook=lambda d: {int(k) if k.isdigit() else k: v for k, v in d})
@@ -321,7 +333,7 @@ def GetStringList(romfs_path, dump_path=''):
                 filepath = os.path.join(os.path.relpath(dir, romfs_path), os.path.basename(filepath))
                 if os.path.splitext(filepath)[1] in ['.zs', '.zstd', '.mc']:
                     filepath = os.path.splitext(filepath)[0]
-                if os.path.splitext(filepath)[1] not in ['.bwav', '.rsizetable'] and os.path.splitext(filepath)[0] != r"Pack\ZsDic":
+                if os.path.splitext(filepath)[1] not in ['.bwav', '.rsizetable', '.rcl'] and os.path.splitext(filepath)[0] != r"Pack\ZsDic":
                     filepath = filepath.replace('\\', '/')
                     paths.append(filepath)
                     print(filepath)
@@ -354,7 +366,7 @@ def GetInfo(romfs_path, dump_path=''):
                 filepath = os.path.join(os.path.relpath(dir, romfs_path), os.path.basename(filepath))
                 if os.path.splitext(filepath)[1] in ['.zs', '.zstd', '.mc']:
                     filepath = os.path.splitext(filepath)[0]
-                if os.path.splitext(filepath)[1] not in ['.bwav', '.rsizetable'] and os.path.splitext(filepath)[0] != r"Pack\ZsDic":
+                if os.path.splitext(filepath)[1] not in ['.bwav', '.rsizetable', '.rcl'] and os.path.splitext(filepath)[0] != r"Pack\ZsDic":
                     filepath = filepath.replace('\\', '/')
                     info[filepath] = CalcSize(full_path, dump_path)
                     print(filepath)
@@ -452,24 +464,33 @@ import PySimpleGUI as sg
 from tkinter import filedialog as fd
 def open_tool():
     sg.theme('Black')
-    event, values = sg.Window('RESTBL Merger',
-                              [[sg.Text('Options:'), sg.Checkbox(default=True, text='Compress Output?', size=(20,10), key='compressed')],
-                               [sg.Button('Select Mods'), sg.Button('Select RESTBL'), sg.Button('Exit')]]).read(close=True)
-    if event == 'Select Mods':
-        mod_path, romfs_path, restbl_path, version = get_paths()
-        MergeMods(mod_path, romfs_path, restbl_path, version, compressed=values['compressed'])
-    elif event == 'Select RESTBL':
-        changelog0, changelog1, restbl = get_changelogs()
-        print("Calculating merged changelog")
-        changelog = MergeChangelogs([changelog0, changelog1])
-        print("Applying changes")
-        restbl.ApplyChangelog(changelog)
-        restbl.Reserialize()
-        print("Finished")
-    else:
-        sys.exit()
+    event, values = sg.Window('RESTBL Tool',
+                              [[sg.Text('Options:'), sg.Checkbox(default=True, text='Compress Output?', size=(50,30), key='compressed')],
+                               [sg.Button('Generate RESTBL From Mod(s)'), sg.Button('Select RESTBL to Merge'), sg.Button('Generate Changelog'),
+                                sg.Button('Apply Patches'), sg.Button('Exit')]]).read(close=True)
+    
+    match event:
+        case 'Generate RESTBL From Mod(s)':
+            mod_path, romfs_path, restbl_path, version = merge_mods()
+            MergeMods(mod_path, romfs_path, restbl_path, version, compressed=values['compressed'])
+        case 'Select RESTBL to Merge':
+            changelog0, changelog1, restbl = merge_restbl()
+            print("Calculating merged changelog")
+            changelog = MergeChangelogs([changelog0, changelog1])
+            print("Applying changes")
+            restbl.ApplyChangelog(changelog)
+            restbl.Reserialize()
+            print("Finished")
+        case 'Generate Changelog':
+            gen_changelog()
+        case 'Apply Patches':
+            apply_patches()
+        case 'Exit':
+            sys.exit()
+    
+    open_tool()
 
-def get_paths():
+def merge_mods():
     mod_path = fd.askdirectory(title="Select Directory Containing Mods to Merge")
     romfs_path = fd.askdirectory(title="Select RomFS Dump")
     event, value = sg.Window('Options', [[sg.Button('Add Base RESTBL File'), sg.Button('Create Base RESTBL File')]]).read(close=True)
@@ -485,7 +506,7 @@ def get_paths():
 
     return mod_path, romfs_path, restbl_path, version
 
-def get_changelogs():
+def merge_restbl():
     restbl_path0 = fd.askopenfilename(title="Select RESTBL File 1", filetypes=[('RESTBL Files', '.rsizetable'),
                                                                            ('RESTBL Files', '.rsizetable.zs')])
     restbl0 = Restbl(restbl_path0)
@@ -493,3 +514,47 @@ def get_changelogs():
                                                                            ('RESTBL Files', '.rsizetable.zs')])
     restbl1 = Restbl(restbl_path1)
     return restbl0.GenerateChangelog(), restbl1.GenerateChangelog(), restbl0
+
+def gen_changelog():
+    restbl_path = fd.askopenfilename(title="Select RESTBL File", filetypes=[('RESTBL Files', '.rsizetable'),
+                                                                           ('RESTBL Files', '.rsizetable.zs')])
+    event, value = sg.Window('Select Format', [[sg.Button('JSON Changelog'), sg.Button('RCL'), sg.Button('YAML Patch')]]).read(close=True)
+    restbl = Restbl(restbl_path)
+    print("Generating Changelog")
+    match event:
+        case 'JSON Changelog':
+            changelog = restbl.GenerateChangelog()
+            with open('changelog.json', 'w') as f:
+                json.dump(changelog, f, indent=4)
+        case 'RCL':
+            restbl.GenerateRcl()
+        case 'YAML Patch':
+            restbl.GenerateYamlPatch()
+    print("Finished")
+        
+def apply_patches():
+    restbl_path = fd.askopenfilename(title="Select RESTBL File", filetypes=[('RESTBL Files', '.rsizetable'),
+                                                                           ('RESTBL Files', '.rsizetable.zs')])
+    patches_path = fd.askdirectory(title="Select Patches Folder")
+    restbl = Restbl(restbl_path)
+    print("Analyzing Patches")
+    patches = [i for i in os.listdir(patches_path) if os.path.isfile(i) and os.path.splitext(i)[1].lower() in ['.json', '.yml', '.yaml', '.rcl']]
+    changelogs = []
+    for patch in patches:
+        match os.path.splitext(patch)[1].lower():
+            case '.json':
+                with open(os.path.join(patches_path, patch), 'r') as f:
+                    changelogs.append(json.load(f, object_pairs_hook=lambda d: {int(k) if k.isdigit() else k: v for k, v in d}))
+            case '.yml' | '.yaml':
+                changelogs.append(restbl.GenerateChangelogFromYaml(os.path.join(patches_path, patch)))
+            case '.rcl':
+                changelogs.append(restbl.GenerateChangelogFromRcl(os.path.join(patches_path, patch)))
+    print("Merging Patches")
+    changelog = MergeChangelogs(changelogs)
+    print("Applying Patches")
+    restbl.ApplyChangelog(changelog)
+    restbl.Reserialize()
+    print("Finished")
+
+if __name__ == "__main__":
+    open_tool()
