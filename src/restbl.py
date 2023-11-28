@@ -171,19 +171,22 @@ class Restbl:
             filename = "changes.rcl"
         with open(filename, 'w') as rcl:
             for change in changelog["Changes"]:
-                string = str(self._TryGetPath(change, self.hashmap))
-                if string.isdigit():
-                    string = '0x' + string
+                string = self._TryGetPath(change, self.hashmap)
+                if type(string) == int:
+                    string = hex(string)
+                string = str(string)
                 rcl.write('* ' + string + ' = ' + str(changelog["Changes"][change]) + '\n')
             for change in changelog["Additions"]:
-                string = str(self._TryGetPath(change, self.hashmap))
-                if string.isdigit():
-                    string = '0x' + string
+                string = self._TryGetPath(change, self.hashmap)
+                if type(string) == int:
+                    string = hex(string)
+                string = str(string)
                 rcl.write('+ ' + string + ' = ' + str(changelog["Additions"][change]) + '\n')
             for change in changelog["Deletions"]:
-                string = str(self._TryGetPath(change, self.hashmap))
-                if string.isdigit():
-                    string = '0x' + string
+                string = self._TryGetPath(change, self.hashmap)
+                if type(string) == int:
+                    string = hex(string)
+                string = str(string)
                 rcl.write('- ' + string + '\n')
 
     def GenerateChangelogFromRcl(self, rcl_path):
