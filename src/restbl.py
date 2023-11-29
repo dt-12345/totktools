@@ -471,7 +471,7 @@ def GetInfoWithChecksum(romfs_path, dump_path='', version=121):
                         if checksum != checksums[filepath]:
                             add = True
                     else:
-                        add = False
+                        add = True
                     if add:
                         info[filepath] = CalcSize(full_path, dump_path)
                         print(filepath)
