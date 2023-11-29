@@ -330,11 +330,27 @@ class Restbl:
         return changelog
     
     # Same as above but for multiple mods
-    def GenerateChangelogFromModDirectory(self, mod_path, dump_path=''):
+    def GenerateChangelogFromModDirectory(self, mod_path, dump_path='', delete=False, smart_analysis=True):
         changelogs = []
         mods = [mod for mod in os.listdir(mod_path) if os.path.isdir(os.path.join(mod_path, mod))]
         for mod in mods:
-            changelogs.append(self.GenerateChangelogFromMod(os.path.join(mod_path, mod), dump_path))
+            restbl_path = os.path.join(mod_path, mod, 'romfs/System/Resource/ResourceSizeTable.Product.' + self.game_version + '.rsizetable.zs')
+            if smart_analysis:
+                if os.path.exists(restbl_path):
+                    print(f"Found RESTBL: {restbl_path}")
+                    restbl = Restbl(restbl_path)
+                    changelogs.append(restbl.GenerateChangelog())
+                else:
+                    print(f"Did not find RESTBL in {mod}")
+                    changelogs.append(self.GenerateChangelogFromMod(os.path.join(mod_path, mod), dump_path))
+            else:
+                changelogs.append(self.GenerateChangelogFromMod(os.path.join(mod_path, mod), dump_path))
+            if delete:
+                try:
+                    os.remove(restbl_path)
+                    print(f"Removed {restbl_path}")
+                except FileNotFoundError:
+                    pass
         return MergeChangelogs(changelogs)
     
     # Loads the vanilla RESTBL values into the object
@@ -457,7 +473,7 @@ def MergeChangelogs(changelogs):
     changelog = dict(sorted(changelog.items()))
     return changelog
 
-def MergeMods(mod_path, romfs_path, restbl_path='', version=121, compressed=True):
+def MergeMods(mod_path, romfs_path, restbl_path='', version=121, compressed=True, delete=False, smart_analysis=True):
     if not(os.path.exists(restbl_path)):
         print("Creating empty resource size table...")
         filename = os.path.join(restbl_path, 'ResourceSizeTable.Product.' + str(version).replace('.', '') + '.rsizetable')
@@ -473,7 +489,7 @@ def MergeMods(mod_path, romfs_path, restbl_path='', version=121, compressed=True
     else:
         restbl = Restbl(restbl_path)
     print("Generating changelogs...")
-    changelog = restbl.GenerateChangelogFromModDirectory(mod_path, romfs_path)
+    changelog = restbl.GenerateChangelogFromModDirectory(mod_path, romfs_path, delete, smart_analysis)
     with open('test.json', 'w') as f:
         json.dump(changelog, f, indent=4)
     print("Applying changes...")
@@ -495,21 +511,32 @@ from tkinter import filedialog as fd
 def open_tool():
     sg.theme('Black')
     event, values = sg.Window('RESTBL Tool',
-                              [[sg.Text('Options:'), sg.Checkbox(default=True, text='Compress Output?', size=(50,30), key='compressed')],
+                              [[sg.Text('Options:'), sg.Checkbox(default=True, text='Compress Output?', size=(10,5), key='compressed'),
+                                sg.Checkbox(default=True, text='Use Pre-Existing RESTBL from Mods?', size=(28,5), key='smart_analyze'),
+                                sg.Checkbox(default=False, text='Delete Pre-Existing RESTBL from Mods?', size=(20,5), key='delete')],
                                [sg.Button('Generate RESTBL From Mod(s)'), sg.Button('Select RESTBL to Merge'), sg.Button('Generate Changelog'),
                                 sg.Button('Apply Patches'), sg.Button('Exit')]]).read(close=True)
     
     match event:
         case 'Generate RESTBL From Mod(s)':
             mod_path, romfs_path, restbl_path, version = merge_mods()
-            MergeMods(mod_path, romfs_path, restbl_path, version, compressed=values['compressed'])
+            MergeMods(mod_path, romfs_path, restbl_path, version, values['compressed'], values['delete'], values['smart_analyze'])
         case 'Select RESTBL to Merge':
             changelog0, changelog1, restbl = merge_restbl()
-            print("Calculating merged changelog")
+            print("Calculating merged changelog...")
             changelog = MergeChangelogs([changelog0, changelog1])
-            print("Applying changes")
+            print("Applying changes...")
             restbl.ApplyChangelog(changelog)
             restbl.Reserialize()
+            if values['compressed']:
+                with open(restbl.filename, 'rb') as file:
+                    data = file.read()
+                if os.path.exists(restbl.filename + '.zs'):
+                    os.remove(restbl.filename + '.zs')
+                os.rename(restbl.filename, restbl.filename + '.zs')
+                with open(restbl.filename + '.zs', 'wb') as file:
+                    compressor = zs.ZstdCompressor()
+                    file.write(compressor.compress(data))
             print("Finished")
         case 'Generate Changelog':
             gen_changelog()
@@ -550,7 +577,7 @@ def gen_changelog():
                                                                            ('RESTBL Files', '.rsizetable.zs')])
     event, value = sg.Window('Select Format', [[sg.Button('JSON Changelog'), sg.Button('RCL'), sg.Button('YAML Patch')]]).read(close=True)
     restbl = Restbl(restbl_path)
-    print("Generating Changelog")
+    print("Generating changelog...")
     match event:
         case 'JSON Changelog':
             changelog = restbl.GenerateChangelog()
@@ -567,7 +594,7 @@ def apply_patches():
                                                                            ('RESTBL Files', '.rsizetable.zs')])
     patches_path = fd.askdirectory(title="Select Patches Folder")
     restbl = Restbl(restbl_path)
-    print("Analyzing Patches")
+    print("Analyzing patches...")
     patches = [i for i in os.listdir(patches_path) if os.path.isfile(i) and os.path.splitext(i)[1].lower() in ['.json', '.yml', '.yaml', '.rcl']]
     changelogs = []
     for patch in patches:
@@ -579,9 +606,9 @@ def apply_patches():
                 changelogs.append(restbl.GenerateChangelogFromYaml(os.path.join(patches_path, patch)))
             case '.rcl':
                 changelogs.append(restbl.GenerateChangelogFromRcl(os.path.join(patches_path, patch)))
-    print("Merging Patches")
+    print("Merging patches...")
     changelog = MergeChangelogs(changelogs)
-    print("Applying Patches")
+    print("Applying patches...")
     restbl.ApplyChangelog(changelog)
     restbl.Reserialize()
     print("Finished")
