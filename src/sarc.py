@@ -214,6 +214,7 @@ class Sarc:
             files.append(file["Name"])
         return files
 
+    # For RESTBL
     def ListFileInfo(self):
         files = {}
         for file in self.files:

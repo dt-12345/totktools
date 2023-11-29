@@ -22,7 +22,7 @@ def get_correct_path(relative_path):
     return os.path.join(base_path, relative_path)
 
 class Restbl:
-    def __init__(self, filepath):
+    def __init__(self, filepath): # Accepts both compressed and decompressed files
         if os.path.splitext(filepath)[1] in ['.zs', '.zstd']:
             decompressor = zs.ZstdDecompressor()
             with open(filepath, 'rb') as f:
@@ -78,7 +78,9 @@ class Restbl:
             self.buffer.write(u32(self.string_size))
             self.buffer.write(u32(len(self.hash_table)))
             self.buffer.write(u32(len(self.collision_table)))
+            # Hash table is sorted by hash for fast lookup
             self.hash_table = dict(sorted(self.hash_table.items()))
+            # Collision table is sorted by name for fast lookup
             self.collision_table = dict(sorted(self.collision_table.items()))
             for hash in self.hash_table:
                 self.buffer.write(u32(hash))
@@ -130,15 +132,20 @@ class Restbl:
                 self.hashmap[binascii.crc32(path.encode('utf-8'))] = path
         return self.hashmap
 
+    # Returns all modified entries
     def _DictCompareChanges(self, edited, original):
         return {k: edited[k] for k in edited if k in original and edited[k] != original[k]}
     
+    # Returns all entries not present in the modified version
     def _DictCompareDeletions(self, edited, original):
         return {k: original[k] for k in original if k not in edited}
     
+    # Returns all entries only present in the modified version
     def _DictCompareAdditions(self, edited, original):
         return {k: edited[k] for k in edited if k not in original}
 
+    # Merges the changes to the hash table and collision table into one dictionary
+    # Function should be one of the DictCompare functions above
     def _GetCombinedChanges(self, original, function):
         changes_hash = function(self.hash_table, original["Hash Table"])
         changes_collision = function(self.collision_table, original["Collision Table"])
@@ -195,6 +202,7 @@ class Restbl:
                 string = str(string)
                 rcl.write('- ' + string + '\n')
 
+    # Necessary to apply RCL files as patches
     def GenerateChangelogFromRcl(self, rcl_path):
         changelog = {"Changes" : {}, "Additions" : {}, "Deletions" : {}}
         with open(rcl_path, 'r') as rcl:
@@ -225,6 +233,8 @@ class Restbl:
         with open(filename, 'w') as yaml_patch:
             yaml.dump(patch, yaml_patch, allow_unicode=True, encoding='utf-8', sort_keys=True)
     
+    # Necessary to apply YAML patches
+    # YAML patches don't appear to support entry deletion
     def GenerateChangelogFromYaml(self, yaml_path):
         changelog = {"Changes" : {}, "Additions" : {}, "Deletions" : {}}
         with open(yaml_path, 'r') as yml:
@@ -241,6 +251,7 @@ class Restbl:
                 changelog["Additions"][change] = patch[change]
         return changelog
     
+    # Requires a single changelog (merge them first with MergeChangelogs)
     def ApplyChangelog(self, changelog):
         # Check if in collision table, then check if it's a hash, then check if the hash exists, otherwise add
         for change in changelog["Changes"]:
@@ -287,6 +298,7 @@ class Restbl:
         changelog = self.GenerateChangelogFromYaml(yaml_path)
         self.ApplyChangelog(changelog)
     
+    # Merges RCL/YAML patches in a single directory into one changelog
     def MergePatches(self, patches_folder):
         patches = [file for file in os.listdir(patches_folder) if os.path.splitext(file)[1] in ['.rcl', '.yml', '.yaml']]
         changelogs = []
@@ -332,6 +344,8 @@ class Restbl:
                     hash = file
                 add = False
                 if checksum:
+                    # Only overwrite if the entry is larger than the original entry
+                    # This is mostly in case the mod contains multiple copies of a file in a pack of differing sizes
                     if file in defaults["Collision Table"]:
                         if info[file] > defaults["Collision Table"][file]:
                             add = True
@@ -415,7 +429,8 @@ def GetFileLists(mod_path, dump_path=''):
     mods = [mod for mod in os.listdir(mod_path) if os.path.isdir(os.path.join(mod_path, mod))]
     files = {}
     for mod in mods:
-        files[mod] = GetStringList(os.path.join(mod_path, mod) + "/romfs", dump_path)
+        if os.path.exists(os.path.join(mod_path, mod) + "/romfs"):
+            files[mod] = GetStringList(os.path.join(mod_path, mod) + "/romfs", dump_path)
     return files
 
 # Same as above but stores the estimated entry size as well
@@ -448,6 +463,7 @@ def GetInfo(romfs_path, dump_path=''):
     info = dict(sorted(info.items()))
     return info
 
+# Same as GetInfo but does a checksum comparison first to see if the file has been modified
 def GetInfoWithChecksum(romfs_path, dump_path='', version=121):
     info = {}
     if dump_path == '':
@@ -505,6 +521,7 @@ def GetInfoList(mod_path, dump_path=''):
         files[mod] = GetInfo(os.path.join(mod_path, mod) + "/romfs", dump_path)
     return files
 
+# Returns a SHA-256 hash of file
 def CalcFileChecksum(filepath):
     with open(filepath, 'rb') as f:
         data = f.read()
@@ -519,7 +536,7 @@ def CalcSize(file, romfs_path, size=None):
         size = decompressor.GetDecompressedSize(file)
         file = os.path.splitext(file)[0]
     elif os.path.splitext(file)[1] in ['.mc']:
-        size = os.path.getsize(file) * 5
+        size = os.path.getsize(file) * 5 # MC decompressor wasn't working so this is an estimate of the decompressed size
         file = os.path.splitext(file)[0]
     if os.path.splitext(file)[1] == '.txtg':
         return size + 5000
@@ -548,6 +565,7 @@ def MergeChangelogs(changelogs):
     changelog = dict(sorted(changelog.items()))
     return changelog
 
+# Analyzes a directory of mods, generates a combined changelog, and generates a RESTBL from it
 def MergeMods(mod_path, romfs_path, restbl_path='', version=121, compressed=True, delete=False, smart_analysis=True, checksum=False):
     if not(os.path.exists(restbl_path)):
         print("Creating empty resource size table...")
@@ -581,6 +599,7 @@ def MergeMods(mod_path, romfs_path, restbl_path='', version=121, compressed=True
             file.write(compressor.compress(data))
     print("Finished")
 
+# Simple GUI, nothing special
 import PySimpleGUI as sg
 from tkinter import filedialog as fd
 def open_tool():
@@ -590,11 +609,11 @@ def open_tool():
                                 sg.Checkbox(default=True, text='Use Existing RESTBL', size=(17,5), key='smart_analyze'),
                                 sg.Checkbox(default=False, text='Delete Existing RESTBL', size=(19,5), key='delete'),
                                 sg.Checkbox(default=True, text='Use Checksums', size=(12,5), key='checksum')],
-                               [sg.Button('Generate RESTBL From Mod(s)'), sg.Button('Select RESTBL to Merge'), sg.Button('Generate Changelog'),
+                               [sg.Button('Generate RESTBL from Mod(s)'), sg.Button('Select RESTBL to Merge'), sg.Button('Generate Changelog'),
                                 sg.Button('Apply Patches'), sg.Button('Exit')]]).read(close=True)
     
     match event:
-        case 'Generate RESTBL From Mod(s)':
+        case 'Generate RESTBL from Mod(s)':
             mod_path, romfs_path, restbl_path, version = merge_mods()
             MergeMods(mod_path, romfs_path, restbl_path, version, values['compressed'], values['delete'], values['smart_analyze'], values['checksum'])
         case 'Select RESTBL to Merge':
@@ -617,12 +636,13 @@ def open_tool():
         case 'Generate Changelog':
             gen_changelog()
         case 'Apply Patches':
-            apply_patches()
+            apply_patches(values['compressed'])
         case 'Exit':
             sys.exit()
     
     open_tool()
 
+# Gets the necessary filepaths and version info for MergeMods()
 def merge_mods():
     mod_path = fd.askdirectory(title="Select Directory Containing Mods to Merge")
     romfs_path = fd.askdirectory(title="Select RomFS Dump")
@@ -639,6 +659,7 @@ def merge_mods():
 
     return mod_path, romfs_path, restbl_path, version
 
+# Generates changelogs for the two RESTBL files to merge
 def merge_restbl():
     restbl_path0 = fd.askopenfilename(title="Select RESTBL File 1", filetypes=[('RESTBL Files', '.rsizetable'),
                                                                            ('RESTBL Files', '.rsizetable.zs')])
@@ -648,6 +669,7 @@ def merge_restbl():
     restbl1 = Restbl(restbl_path1)
     return restbl0.GenerateChangelog(), restbl1.GenerateChangelog(), restbl0
 
+# Generates a changelog in the specified format
 def gen_changelog():
     restbl_path = fd.askopenfilename(title="Select RESTBL File", filetypes=[('RESTBL Files', '.rsizetable'),
                                                                            ('RESTBL Files', '.rsizetable.zs')])
@@ -664,8 +686,9 @@ def gen_changelog():
         case 'YAML Patch':
             restbl.GenerateYamlPatch()
     print("Finished")
-        
-def apply_patches():
+
+# Applies all RCL/YAML patches in a patch folder
+def apply_patches(compressed=True):
     restbl_path = fd.askopenfilename(title="Select RESTBL File", filetypes=[('RESTBL Files', '.rsizetable'),
                                                                            ('RESTBL Files', '.rsizetable.zs')])
     patches_path = fd.askdirectory(title="Select Patches Folder")
@@ -687,6 +710,15 @@ def apply_patches():
     print("Applying patches...")
     restbl.ApplyChangelog(changelog)
     restbl.Reserialize()
+    if compressed:
+        with open(restbl.filename, 'rb') as file:
+            data = file.read()
+        if os.path.exists(restbl.filename + '.zs'):
+            os.remove(restbl.filename + '.zs')
+        os.rename(restbl.filename, restbl.filename + '.zs')
+        with open(restbl.filename + '.zs', 'wb') as file:
+            compressor = zs.ZstdCompressor()
+            file.write(compressor.compress(data))
     print("Finished")
 
 if __name__ == "__main__":
