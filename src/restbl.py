@@ -342,13 +342,13 @@ class Restbl:
                         add = True
                 else:
                     add = True
-                #if add:
-                if file in strings:
-                    changelog["Changes"][file] = info[file]
-                elif file in self.collision_table:
-                    changelog["Changes"][file] = info[file]
-                else:
-                    changelog["Additions"][file] = info[file]
+                if add:
+                    if file in strings:
+                        changelog["Changes"][file] = info[file]
+                    elif file in self.collision_table:
+                        changelog["Changes"][file] = info[file]
+                    else:
+                        changelog["Additions"][file] = info[file]
         changelog = dict(sorted(changelog.items()))
         return changelog
     
@@ -589,7 +589,7 @@ def open_tool():
                               [[sg.Text('Options:'), sg.Checkbox(default=True, text='Compress', size=(8,5), key='compressed'),
                                 sg.Checkbox(default=True, text='Use Existing RESTBL', size=(17,5), key='smart_analyze'),
                                 sg.Checkbox(default=False, text='Delete Existing RESTBL', size=(19,5), key='delete'),
-                                sg.Checkbox(default=False, text='Use Checksums', size=(12,5), key='checksum')],
+                                sg.Checkbox(default=True, text='Use Checksums', size=(12,5), key='checksum')],
                                [sg.Button('Generate RESTBL From Mod(s)'), sg.Button('Select RESTBL to Merge'), sg.Button('Generate Changelog'),
                                 sg.Button('Apply Patches'), sg.Button('Exit')]]).read(close=True)
     
