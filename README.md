@@ -1,0 +1,2 @@
+# WIP
+If you're here looking for the RESTBL tool, it's in [dist/RESTB Tool.exe](dist/RESTBL%20Tool.exe), usage info is in [dist/RESTBL Tool.md](dist/RESTBL%20Tool.md). Everything else here is very far from finished and probably won't be.
