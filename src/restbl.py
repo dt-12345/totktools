@@ -121,27 +121,29 @@ class Restbl:
     def _GenerateHashmap(self, paths=[]):
         if paths == []:
             version = os.path.splitext(os.path.splitext(os.path.basename(self.filename))[0])[1]
-            string_list = "string_lists/" + version.replace('.', '') + ".txt"
+            string_list = "checksums/TearsOfTheKingdom" + version.replace('.', '') + ".json"
             string_list = get_correct_path(string_list)
-            paths = []
             with open(string_list, 'r') as strings:
-                for line in strings:
-                    paths.append(line[:-1])
+                data = json.load(strings)
+            paths = list(data.keys())
         for path in paths:
             if path not in self.collision_table:
                 self.hashmap[binascii.crc32(path.encode('utf-8'))] = path
         return self.hashmap
 
     # Returns all modified entries
-    def _DictCompareChanges(self, edited, original):
+    @staticmethod
+    def _DictCompareChanges(edited, original):
         return {k: edited[k] for k in edited if k in original and edited[k] != original[k]}
     
     # Returns all entries not present in the modified version
-    def _DictCompareDeletions(self, edited, original):
+    @staticmethod
+    def _DictCompareDeletions(edited, original):
         return {k: original[k] for k in original if k not in edited}
     
     # Returns all entries only present in the modified version
-    def _DictCompareAdditions(self, edited, original):
+    @staticmethod
+    def _DictCompareAdditions(edited, original):
         return {k: edited[k] for k in edited if k not in original}
 
     # Merges the changes to the hash table and collision table into one dictionary
@@ -157,7 +159,8 @@ class Restbl:
         return changes
 
     # Attempts to get the filepath from the hash and returns the hash if not found
-    def _TryGetPath(self, hash, hashmap):
+    @staticmethod
+    def _TryGetPath(hash, hashmap):
         if hash in hashmap:
             return hashmap[hash]
         else:

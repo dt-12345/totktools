@@ -1,6 +1,8 @@
 # Largely adapated from https://github.com/zeldamods/evfl
 import struct
 import io
+import mmh3
+import binascii
 
 class Stream:
     __slots__ = ["stream"]
@@ -171,3 +173,9 @@ def vec3f(values, end="<"):
 
 def padding(count):
     return struct.pack(f"{count}s", b'\x00')
+
+def hash(value):
+    return mmh3.hash(value, signed=False)
+
+def crc32(value):
+    return binascii.crc32(value)
