@@ -175,9 +175,6 @@ class Msbt:
                     string += char.decode(self.encoding)
         self.functions.append(functions)
         return string[:-1]
-    
-    def AddFunctionsToString(self, string, functions):
-        pass
 
     def ParseFunction(self, function):
         args = []
@@ -342,6 +339,7 @@ class Msbt:
                 func_string += " " + arg1 + "=" + str(arg[arg1])
         return func_string
     
+    # not functional
     def GenerateLabelSection(self):
         labels = [k for entry in self.output_dict['Data'] for k in entry]
         label_groups = {}
@@ -354,7 +352,7 @@ class Msbt:
         print(len(label_groups))
 
     def SetEndianness(self, endianness):
-        if endianness.lower() in ['le', 'little', 'little endian', 'little_endian']:
+        if endianness.lower() in ['le', 'little', 'little endian', 'little_endian', 'littleendian']:
             self.byte_order = 0xFFFE
             self.bom = '<'
         else:
@@ -381,4 +379,4 @@ class Msbt:
         hash = 0
         for char in label:
             hash = hash * 0x492 + ord(char)
-        return (hash & 0xFFFFFFFF) % 101
+        return (hash & 0xFFFFFFFF) % 101 # 101 groups is apparently the default

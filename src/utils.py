@@ -119,10 +119,13 @@ class WriteStream(Stream):
     
     def align_up(self, alignment):
         while self.stream.tell() % alignment != 0:
-            self.stream.seek(1, 1)
+            self.skip(1)
 
     def write(self, data):
         self.stream.write(data)
+
+    def read(self, *args):
+        self.stream.read(*args)
 
 def u8(value):
     return struct.pack("<B", value)
