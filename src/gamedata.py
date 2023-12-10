@@ -169,6 +169,11 @@ class Gamedata:
     
     # Sets/adds Bool64bitKey entry
     def SetBoolKey(self, entry):
+        assert len(entry) in [3, 4], "Invalid entry"
+        assert "ResetTypeValue" in entry and "Hash" in entry and "SaveFileIndex" in entry, "Invalid entry"
+        if entry["ResetTypeValue"] & (2 ** 8):
+            assert "ExtraByte" in entry, "Material respawning entries need an ExtraByte value"
+        assert type(entry["Hash"] == ULong), "Hashes must be a unsigned long (64-bits)"
         for i in range(len(self.gamedata.root_node["Data"]["Bool64bitKey"])):
             if self.gamedata.root_node["Data"]["Bool64bitKey"][i]["Hash"] == entry["Hash"]:
                 self.gamedata.root_node["Data"]["Bool64bitKey"][i] = entry
@@ -177,6 +182,8 @@ class Gamedata:
 
     # Adds entry to struct
     def AddEntryToStruct(self, entry, struct_name):
+        assert len(entry) == 2, "Invalid entry"
+        assert set(list(entry.keys())) == {"Hash", "Value"}, "Invalid entry"
         hash = self.GetHash(struct_name)
         matched = False
         for i in range(len(self.gamedata.root_node["Data"]["Struct"])):
