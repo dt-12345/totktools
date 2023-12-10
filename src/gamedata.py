@@ -291,6 +291,8 @@ class Gamedata:
         self.SetFlag("Struct", struct)
         self.SetFlag("Bool", isnew)
         self.SetFlag("Enum", state)
+        self.AddEntryToStruct({"Hash" : self.GetHash(actor_name),
+                               "Value" : self.GetHash(f"PictureBookData.{actor_name}")}, "PictureBookData")
 
     def AddBattleData(self, actor_name):
         struct = {
