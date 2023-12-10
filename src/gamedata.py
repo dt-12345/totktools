@@ -4,8 +4,8 @@ import mmh3
 import zstd
 
 # Includes a few presets for common sets of flags (such as adding new enemies, new materials)
-# If you want to make your own presets, use the Int, UInt, Long, ULong, Float, and Double classes
-# Do not use the built-in Python types - there are strict typing requirements and we need to preserve those
+# If you want to make your own presets, use the Int, UInt, Long, ULong, Float, and Double classes for numerical values
+# Do not use the built-in Python types for those - there are strict typing requirements and we need to preserve those
 
 # Data types found in GameDataList
 valid_types = [
@@ -210,6 +210,10 @@ class Gamedata:
                 return result
         return None
     
+    # If you ever need to reference this
+    def GetSaveDirectories(self):
+        return self.gamedata.root_node["MetaData"]["SaveDirectory"]
+    
     @staticmethod
     def GetHash(value):
         if isinstance(value, int):
@@ -345,7 +349,6 @@ class Gamedata:
                                "Value" : self.GetHash(f"DefeatedEnemyNum.{enemy_name}")}, "DefeatedEnemyNum")
         self.SetFlag("Int", {"DefaultValue": Int(0), "Hash": self.GetHash(f"DefeatedEnemyNum.{enemy_name}"),
                             "ResetTypeValue": Int(80), "SaveFileIndex": Int(0)})
-        # need to add defeatednum
 
     def AddMaterialFlags(self, material_name, throwable=True):
         print(f"Adding {material_name} flags...")
