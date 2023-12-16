@@ -138,7 +138,6 @@ class Sarc:
             buffer = WriteStream(outfile)
 
             self.files = sorted(self.files, key=lambda d: self.Hash(d["Name"]))
-            name_count = {i["Name"]: 1 for i in self.files}
             name_count = {}
             hashes = []
             for file in self.files:
