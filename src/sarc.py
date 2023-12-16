@@ -139,6 +139,15 @@ class Sarc:
 
             self.files = sorted(self.files, key=lambda d: self.Hash(d["Name"]))
             name_count = {i["Name"]: 1 for i in self.files}
+            name_count = {}
+            hashes = []
+            for file in self.files:
+                hash = self.Hash(file["Name"])
+                if hash not in hashes:
+                    hashes.append(hash)
+                    name_count[file["Name"]] = 1
+                else:
+                    name_count[file["Name"]] += 1
             name_offsets = {}
             buffer.seek(self.header_size + self.sfat_header_size + 0x10 * len(self.files))
             buffer.write(string(self.sfnt_magic))
