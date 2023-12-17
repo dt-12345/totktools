@@ -220,10 +220,10 @@ class Msbt:
                 name = "number9"
                 args.append({"ref" : arg_stream.read().decode(self.encoding)})
             case [2, 11]:
-                name = "string"
+                name = "string11"
                 args.append({"ref" : arg_stream.read().decode(self.encoding)})
             case [2, 12]:
-                name = "string"
+                name = "string12"
                 args.append({"ref" : arg_stream.read().decode(self.encoding)})
             case [2, 14]:
                 name = "number14"

@@ -142,11 +142,8 @@ class Sarc:
             hashes = []
             for file in self.files:
                 hash = self.Hash(file["Name"])
-                if hash not in hashes:
-                    hashes.append(hash)
-                    name_count[file["Name"]] = 1
-                else:
-                    name_count[file["Name"]] += 1
+                hashes.append(hash)
+                name_count[file["Name"]] = hashes.count(hash)
             name_offsets = {}
             buffer.seek(self.header_size + self.sfat_header_size + 0x10 * len(self.files))
             buffer.write(string(self.sfnt_magic))
