@@ -254,9 +254,9 @@ class Msbt:
             case [2, 25]:
                 name = "equipmentBaseName"
             case [2, 26]:
-                name = "equipmentEssence"
+                name = "essenceAdjective"
             case [2, 27]:
-                name = "attachmentEssence"
+                name = "essenceBaseName"
             case [2, 28]:
                 name = "weaponName"
             case [2, 29]:
