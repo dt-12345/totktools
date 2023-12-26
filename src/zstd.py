@@ -119,6 +119,11 @@ class Zstd:
                         if dic["Name"] == 'bcett.byml.zsdic':
                             dictionary = dic["Data"]
                             break
+                else:
+                    for dic in self.dictionaries:
+                        if dic["Name"] == 'zs.zsdic':
+                            dictionary = dic["Data"]
+                            break
             else:
                 for dic in self.dictionaries:
                     if dic["Name"] == 'zs.zsdic':

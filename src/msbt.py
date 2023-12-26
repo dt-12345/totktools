@@ -48,7 +48,7 @@ class Msbt:
                     self.ReadTextSection(size)
                 case _:
                     raise ValueError(f"Invalid section type: {magic}")
-                
+        
         for i in range(len(self.labels)):
             message = {}
             index = self.indices[i]
@@ -183,10 +183,10 @@ class Msbt:
             case [0, 0]:
                 name = "ruby"
                 args += [{"charSpan" : arg_stream.read_u16(self.bom)},
-                            {"value" : arg_stream.read().decode(self.encoding)[1:]}]
+                            {"value" : self.ReadString(arg_stream, self.encoding, self.bom)}]
             case [0, 1]:
                 name = "font"
-                args.append({"face" : arg_stream.read().decode(self.encoding)})
+                args.append({"face" : self.ReadString(arg_stream, self.encoding, self.bom)})
             case [0, 2]:
                 name = "size"
                 args.append({"value" : arg_stream.read_u16(self.bom)})
@@ -207,7 +207,7 @@ class Msbt:
                 args.append({"id" : arg_stream.read_u8()})
             case [2, 2]:
                 name = "number2"
-                args.append({"ref" : arg_stream.read().decode(self.encoding)})
+                args.append({"ref" : self.ReadString(arg_stream, self.encoding, self.bom)})
             case [2, 3]:
                 name = "currentHorseName"
             case [2, 4]:
@@ -218,37 +218,37 @@ class Msbt:
                 name = "cookingEffectCaption"
             case [2, 9]:
                 name = "number9"
-                args.append({"ref" : arg_stream.read().decode(self.encoding)})
+                args.append({"ref" : self.ReadString(arg_stream, self.encoding, self.bom)})
             case [2, 11]:
                 name = "string11"
-                args.append({"ref" : arg_stream.read().decode(self.encoding)})
+                args.append({"ref" : self.ReadString(arg_stream, self.encoding, self.bom)})
             case [2, 12]:
                 name = "string12"
-                args.append({"ref" : arg_stream.read().decode(self.encoding)})
+                args.append({"ref" : self.ReadString(arg_stream, self.encoding, self.bom)})
             case [2, 14]:
                 name = "number14"
-                args.append({"ref" : arg_stream.read().decode(self.encoding)})
+                args.append({"ref" : self.ReadString(arg_stream, self.encoding, self.bom)})
             case [2, 15]:
                 name = "number15"
-                args.append({"ref" : arg_stream.read().decode(self.encoding)})
+                args.append({"ref" : self.ReadString(arg_stream, self.encoding, self.bom)})
             case [2, 16]:
                 name = "number16"
-                args.append({"ref" : arg_stream.read().decode(self.encoding)})
+                args.append({"ref" : self.ReadString(arg_stream, self.encoding, self.bom)})
             case [2, 18]:
                 name = "shopTradePriceItem"
-                args.append({"ref" : arg_stream.read().decode(self.encoding)})
+                args.append({"ref" : self.ReadString(arg_stream, self.encoding, self.bom)})
             case [2, 19]:
                 name = "time"
-                args.append({"ref" : arg_stream.read().decode(self.encoding)})
+                args.append({"ref" : self.ReadString(arg_stream, self.encoding, self.bom)})
             case [2, 20]:
                 name = "coords"
-                args.append({"ref" : arg_stream.read().decode(self.encoding)})
+                args.append({"ref" : self.ReadString(arg_stream, self.encoding, self.bom)})
             case [2, 21]:
                 name = "number21"
-                args.append({"ref" : arg_stream.read().decode(self.encoding)})
+                args.append({"ref" : self.ReadString(arg_stream, self.encoding, self.bom)})
             case [2, 22]:
                 name = "number22"
-                args.append({"ref" : arg_stream.read().decode(self.encoding)})
+                args.append({"ref" : self.ReadString(arg_stream, self.encoding, self.bom)})
             case [2, 24]:
                 name = "attachmentAdjective"
             case [2, 25]:
@@ -265,18 +265,18 @@ class Msbt:
                 name = "questItemName"
             case [2, 31]:
                 name = "shopSelectItemName"
-                args.append({"ref" : arg_stream.read().decode(self.encoding)})
+                args.append({"ref" : self.ReadString(arg_stream, self.encoding, self.bom)})
             case [2, 32]:
                 name = "sensorTargetNameOnActorMode"
-                args.append({"ref" : arg_stream.read().decode(self.encoding)})
+                args.append({"ref" : self.ReadString(arg_stream, self.encoding, self.bom)})
             case [2, 33]:
                 name = "shopSelectItemName"
-                args.append({"ref" : arg_stream.read().decode(self.encoding)})
+                args.append({"ref" : self.ReadString(arg_stream, self.encoding, self.bom)})
             case [2, 35]:
                 name = "yonaDynamicName"
             case [2, 36]:
                 name = "shopSelectItemName"
-                args.append({"ref" : arg_stream.read().decode(self.encoding)})
+                args.append({"ref" : self.ReadString(arg_stream, self.encoding, self.bom)})
             case [2, 37]:
                 name = "recipeName"
             case [3, 0]:
@@ -286,7 +286,7 @@ class Msbt:
                 name = "setItalicFont"
             case [4, 0]:
                 name = "anim"
-                args.append({"type" : arg_stream.read().decode(self.encoding)})
+                args.append({"type" : self.ReadString(arg_stream, self.encoding, self.bom)})
             case [5, 0]:
                 name = "delay0"
             case [5, 1]:
@@ -305,32 +305,32 @@ class Msbt:
                              {"isPlural" : arg_stream.read_u8()}]
             case [201, 5]:
                 name = "gender"
-                args += [{"m" : self.ReadString(arg_stream, self.encoding)},
-                             {"f" : self.ReadString(arg_stream, self.encoding)},
-                             {"n" : self.ReadString(arg_stream, self.encoding)}]
+                args += [{"m" : self.ReadString(arg_stream, self.encoding, self.bom)},
+                             {"f" : self.ReadString(arg_stream, self.encoding, self.bom)},
+                             {"n" : self.ReadString(arg_stream, self.encoding, self.bom)}]
             case [201, 6]:
                 name = "pluralCase"
-                args += [{"arg1" : self.ReadString(arg_stream, self.encoding)},
-                             {"arg2" : self.ReadString(arg_stream, self.encoding)},
-                             {"arg3" : self.ReadString(arg_stream, self.encoding)}]
+                args += [{"arg1" : self.ReadString(arg_stream, self.encoding, self.bom)},
+                             {"arg2" : self.ReadString(arg_stream, self.encoding, self.bom)},
+                             {"arg3" : self.ReadString(arg_stream, self.encoding, self.bom)}]
             case [201, 8]:
                 name = "gender8"
-                args += [{"arg1" : self.ReadString(arg_stream, self.encoding)},
-                             {"arg2" : self.ReadString(arg_stream, self.encoding)}]
+                args += [{"arg1" : self.ReadString(arg_stream, self.encoding, self.bom)},
+                             {"arg2" : self.ReadString(arg_stream, self.encoding, self.bom)}]
             case [201, 10]:
                 name = "nounCase"
-                args += [{"nomSingle" : self.ReadString(arg_stream, self.encoding)},
-                             {"genSingle" : self.ReadString(arg_stream, self.encoding)},
-                             {"datSingle" : self.ReadString(arg_stream, self.encoding)},
-                             {"accSingle" : self.ReadString(arg_stream, self.encoding)},
-                             {"insSingle" : self.ReadString(arg_stream, self.encoding)},
-                             {"prepSingle" : self.ReadString(arg_stream, self.encoding)},
-                             {"nomPlural" : self.ReadString(arg_stream, self.encoding)},
-                             {"genPlural" : self.ReadString(arg_stream, self.encoding)},
-                             {"datPlural" : self.ReadString(arg_stream, self.encoding)},
-                             {"accPlural" : self.ReadString(arg_stream, self.encoding)},
-                             {"insPlural" : self.ReadString(arg_stream, self.encoding)},
-                             {"prepPlural" : self.ReadString(arg_stream, self.encoding)}]
+                args += [{"nomSingle" : self.ReadString(arg_stream, self.encoding, self.bom)},
+                             {"genSingle" : self.ReadString(arg_stream, self.encoding, self.bom)},
+                             {"datSingle" : self.ReadString(arg_stream, self.encoding, self.bom)},
+                             {"accSingle" : self.ReadString(arg_stream, self.encoding, self.bom)},
+                             {"insSingle" : self.ReadString(arg_stream, self.encoding, self.bom)},
+                             {"prepSingle" : self.ReadString(arg_stream, self.encoding, self.bom)},
+                             {"nomPlural" : self.ReadString(arg_stream, self.encoding, self.bom)},
+                             {"genPlural" : self.ReadString(arg_stream, self.encoding, self.bom)},
+                             {"datPlural" : self.ReadString(arg_stream, self.encoding, self.bom)},
+                             {"accPlural" : self.ReadString(arg_stream, self.encoding, self.bom)},
+                             {"insPlural" : self.ReadString(arg_stream, self.encoding, self.bom)},
+                             {"prepPlural" : self.ReadString(arg_stream, self.encoding, self.bom)}]
             case _:
                 name = f"fun_{function['Group']}_{function['Type']}"
         func_string = name
@@ -360,19 +360,13 @@ class Msbt:
             self.bom = '>'
 
     @staticmethod
-    def ReadString(stream, encoding):
+    def ReadString(stream, encoding, bom):
         string = ""
         if encoding == 'utf-8':
-            char = stream.read(1)
-            while char != b'\x00':
-                string += char.decode(encoding)
-                char = stream.read(1)
+            len = stream.read_u8()  
         else:
-            char = stream.read(2)
-            while char != b'\x00\x00':
-                string += char.decode(encoding)
-                char = stream.read(2)
-        return string
+            len = stream.read_u16(bom)
+        return stream.read(len).decode(encoding)
     
     @staticmethod
     def CalcHash(label):
