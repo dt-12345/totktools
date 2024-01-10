@@ -10,6 +10,7 @@ import os
 import binascii
 import json
 import sys
+import math
 from hashlib import sha256
 
 # For pyinstaller relative paths
@@ -456,13 +457,12 @@ def GetInfo(romfs_path, dump_path=''):
                     print(filepath)
                     if os.path.splitext(filepath)[1] == '.pack':
                         archive = sarc.Sarc(zs.Decompress(full_path, no_output=True))
-                        archive_info = archive.ListFileInfo()
-                        for f in archive_info:
-                            size = CalcSize(f, dump_path, archive_info[f])
-                            if f not in info:
-                                info[f] = size
+                        for f in archive.files:
+                            size = CalcSize(f["Name"], dump_path, f["Data"])
+                            if f["Name"] not in info:
+                                info[f["Name"]] = size
                             else:
-                                info[f] = max(info[f], size)
+                                info[f["Name"]] = max(info[f["Name"]], size)
     info = dict(sorted(info.items()))
     return info
 
@@ -531,22 +531,113 @@ def CalcFileChecksum(filepath):
     return sha256(data).hexdigest()
 
 # These are estimates, would be nice to have more precise values
-def CalcSize(file, romfs_path, size=None):
-    if size == None:
-        size = os.path.getsize(file)
+def CalcSize(file, romfs_path, data=None):
+    if data == None:
+        with open(file, 'rb') as f:
+            data = f.read()
+    size = len(data)
     decompressor = zstd.Zstd(romfs_path)
-    if os.path.splitext(file)[1] in ['.zs', '.zstd']:
+    path, ext = os.path.splitext(file)
+    if ext in ['.zs', '.zstd'] and '.ta.zs' not in file:
         size = decompressor.GetDecompressedSize(file)
-        file = os.path.splitext(file)[0]
-    elif os.path.splitext(file)[1] in ['.mc']:
+        file = path
+        ext = os.path.splitext(file)[1]
+    elif ext == '.mc':
         size = os.path.getsize(file) * 5 # MC decompressor wasn't working so this is an estimate of the decompressed size
-        file = os.path.splitext(file)[0]
-    if os.path.splitext(file)[1] == '.txtg':
-        return size + 5000
-    elif os.path.splitext(file)[1] == '.bgyml':
-        return (size + 1000) * 8
+        file = path
+        ext = os.path.splitext(file)[1]
+
+    # Align to 0x20 bytes
+    size = size - size % 0x20 + (0x20 if size % 0x20 else 0x00)
+
+    # Known values
+    resource_sizes = {
+        '.ainb' : 392,
+        '.asb' : 552,
+        '.baatarc' : 256,
+        '.baev' : 288,
+        '.bagst' : 256,
+        '.bars' : 576,
+        '.bcul' : 256,
+        '.beco' : 256,
+        '.belnk' : 256,
+        '.bfarc' : 256,
+        '.bfevfl' : 288,
+        '.bfsha' : 256,
+        '.bhtmp' : 256,
+        '.blal' : 256,
+        '.blarc' : 256,
+        '.blwp' : 256,
+        '.bnsh' : 256,
+        '.bntx' : 256,
+        '.bphcl' : 256,
+        '.bphhb' : 256,
+        '.bphnm' : 288,
+        '.bphsh' : 368,
+        '.bslnk' : 256,
+        '.bstar' : 288,
+        '.cai' : 256,
+        '.chunk' : 256,
+        '.crbin' : 256,
+        '.cutinfo' : 256,
+        '.dpi' : 256,
+        '.genvb' : 384,
+        '.jpg' : 256,
+        '.pack' : 384,
+        '.png' : 256,
+        '.quad' : 256,
+        '.sarc' : 384,
+        '.tscb' : 256,
+        '.txtg' : 256,
+        '.vsts' : 256,
+        '.wbr' : 256
+    }
+
+    shader_archives = ['Lib/agl/agl_resource.Nin_NX_NVN.release.sarc',
+                       'Lib/gsys/gsys_resource.Nin_NX_NVN.release.sarc',
+                       'Lib/Terrain/tera_resource.Nin_NX_NVN.release.sarc',
+                       'Shader/ApplicationPackage.Nin_NX_NVN.release.sarc']
+    is_shader_archive = False
+    for path in shader_archives:
+        if path in file:
+            is_shader_archive = True
+            break
+    if is_shader_archive:
+        size += 4096
+    elif '.ta.zs' in file:
+        size += 256
+    elif '.bcett.byml' in file:
+        size += 256
+    elif '.byml' in file and '.casset.byml' not in file:
+        size += 256
+    elif ext in resource_sizes:
+        size += resource_sizes[ext]
+        # Non constant resource size handling
+        if ext == '.bstar':
+            count = int.from_bytes(data[0x8:0xC], "little")
+            size += count * 8
+        if ext == '.ainb':
+            has_exb = int.from_bytes(data[0x44:0x48], "little")
+            if has_exb:
+                sig_offset = int.from_bytes(data[has_exb + 0x20:has_exb + 0x24], "little")
+                count = int.from_bytes(data[has_exb + sig_offset:has_exb + sig_offset + 0x4], "little")
+                size += (16 + 8 * math.ceil(count / 2))
+        if ext == '.asb':
+            count = int.from_bytes(data[0x10:0x14], "little")
+            size += count * 40
+            has_exb = int.from_bytes(data[0x60:0x64], "little")
+            if has_exb:
+                sig_offset = int.from_bytes(data[has_exb + 0x20:has_exb + 0x24], "little")
+                count = int.from_bytes(data[has_exb + sig_offset:has_exb + sig_offset + 0x4], "little")
+                size += (16 + 8 * math.ceil(count / 2))
+        if 'Event/EventFlow/Dm_ED_0004.bfevfl' in file:
+            size += 192
+    # Estimate the unknown extensions
+    elif ext in ['.bgyml', '.byml', '.byaml']:
+        size = (size + 1000) * 8
     else:
-        return (size + 1500) * 4
+        size = (size + 1500) * 4
+    return size
 
 # Merges list of changelogs into one (doesn't accept RCL or YAML)
 def MergeChangelogs(changelogs):

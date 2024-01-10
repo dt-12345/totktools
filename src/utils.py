@@ -165,6 +165,9 @@ def f32(value, end="<"):
 def f64(value, end="<"):
     return struct.pack(f"{end}d", value)
 
+def byte_custom(value, size, end="<"):
+    return struct.pack(f"{end}{size}s", value)
+
 def string(value):
     return value.encode('utf-8')
 

@@ -98,11 +98,17 @@ class Byml:
         self.string_table_offset = self.stream.read_u32(self.bom) # String table of string values
         self.root_node_offset = self.stream.read_u32(self.bom) # Root node must be a hash array, array, or dictionary
 
-        self.stream.seek(self.key_table_offset)
-        self.key_table = self.ParseNode()
-        self.stream.seek(self.string_table_offset)
-        self.string_table = self.ParseNode()
-        if self.root_node_offset != 0:
+        if self.key_table_offset:
+            self.stream.seek(self.key_table_offset)
+            self.key_table = self.ParseNode()
+        else:
+            self.key_table = []
+        if self.string_table_offset:
+            self.stream.seek(self.string_table_offset)
+            self.string_table = self.ParseNode()
+        else:
+            self.string_table = []
+        if self.root_node_offset:
             self.stream.seek(self.root_node_offset)
             self.root_node = self.ParseNode()
         else:
@@ -226,9 +232,9 @@ class Byml:
         return (self.stream.read_u8(), self.stream.read_u24(self.bom))
 
     def GetValue(self, node_info):
-        if node_info[0] <= 0x20 and node_info[0] >= 0x2f:
+        if node_info[0] >= 0x20 and node_info[0] <= 0x2f:
             return self.HashArray(node_info)
-        elif node_info[0] <= 0x30 and node_info[0] >= 0x3f:
+        elif node_info[0] >= 0x30 and node_info[0] <= 0x3f:
             return self.HashArrayWithRemap(node_info)
         elif node_info[0] == 0xa0:
             return self.StringIndex(node_info)
@@ -263,7 +269,7 @@ class Byml:
         elif node_info[0] == 0xff:
             return
         else:
-            raise ValueError(f"Invalid node type: {hex(node_info[0])}")
+            raise ValueError(f"Invalid node type: {hex(node_info[0])}\nFile: {self.filename}\nOffset: {hex(self.stream.tell())}")
         
     def GetArrayValue(self, node_info):
         if node_info[0] < 0xa0 or node_info[0] in [0xc0, 0xc1, 0xc4, 0xc8]:
@@ -282,7 +288,7 @@ class Byml:
             return self.GetValue(node_info)
 
     def HashArray(self, node_info):
-        entry_size = (node_info[0] & 0xf) * 0x4 + 0x4
+        entry_size = ((node_info[0] & 0xf) + 1) * 0x4 + 0x4
         pos = self.stream.tell()
         self.stream.read(entry_size * node_info[1])
         types = []
@@ -292,15 +298,10 @@ class Byml:
         entries = []
         for i in range(node_info[1]):
             entry = {}
-            hash = ''
-            for j in range(node_info[0] & 0xf):
-                hash_part = self.stream.read(4).hex()
-                while len(hash_part) != 8:
-                    hash_part = '0' + hash_part
-                hash += hash_part
+            hash = self.stream.read(4 * ((node_info[0] & 0xf) + 1)).hex()
             entry[hash] = self.GetArrayValue((types[i], 1))
             entries.append(entry)
-        return entry
+        return entries
 
     # Unsupported
     def HashArrayWithRemap(self, node_info):
